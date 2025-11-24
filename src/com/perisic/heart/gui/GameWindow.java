@@ -1,6 +1,7 @@
 package com.perisic.heart.gui;
 
 import com.perisic.heart.model.Player;
+import com.perisic.heart.model.GameSession;
 import com.perisic.heart.service.*;
 import com.perisic.heart.events.*;
 import javax.swing.*;
@@ -10,7 +11,7 @@ import java.awt.*;
 public class GameWindow extends JFrame implements GameEventDispatcher.GameEventListener {
     
     private GameService gameService;
-    private SoundManager soundManager;  // ← ADDED: Sound manager
+    private SoundManager soundManager;
     private JLabel imageLabel;
     private JLabel scoreLabel;
     private JLabel accuracyLabel;
@@ -19,10 +20,10 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
     private JLabel timerLabel;
     private JProgressBar timerProgress;
     private Timer countdownTimer;
-    private Timer answerDelayTimer;  // ← ADDED: Track the answer delay timer
-    private JButton[] numberButtons;  // ← ADDED: Track all number buttons
-    private boolean isShowingGameOver = false;  // ← ADDED: Prevent multiple dialogs
-    private JButton soundToggleBtn;  // ← ADDED: Sound toggle button
+    private Timer answerDelayTimer;
+    private JButton[] numberButtons;
+    private boolean isShowingGameOver = false;
+    private JButton soundToggleBtn;
     
     // Classic professional colors
     private static final Color DARK_BLUE = new Color(31, 58, 96);
@@ -35,10 +36,18 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
     
     public GameWindow(Player player) {
         gameService = new GameService();
-        soundManager = SoundManager.getInstance();  // ← ADDED: Initialize sound manager
+        soundManager = SoundManager.getInstance();
+        
+        // IMPORTANT: Register listener BEFORE starting session!
         GameEventDispatcher.getInstance().addListener(this);
         
         setupClassicGameWindow(player);
+        
+        // Manually reset display to 0 before starting session
+        scoreLabel.setText(createStatLabel("SCORE", "0", SUCCESS).getText());
+        accuracyLabel.setText(createStatLabel("ACCURACY", "0.0%", LIGHT_BLUE).getText());
+        
+        // Now start the session (this will fire events)
         gameService.startSession(player);
         startCountdownTimer();
     }
@@ -54,13 +63,8 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
         mainPanel.setBackground(LIGHT_GRAY);
         mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         
-        // Top: Timer + Stats (COMPACT)
         JPanel topPanel = createCompactTopPanel();
-        
-        // Center: BALANCED GAME IMAGE
         JPanel centerPanel = createBalancedGamePanel();
-        
-        // Bottom: Number buttons
         JPanel bottomPanel = createButtonPanel();
         
         mainPanel.add(topPanel, BorderLayout.NORTH);
@@ -111,7 +115,7 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
         timerPanel.add(timerContent, BorderLayout.CENTER);
         
         // Stats (center)
-        JPanel statsPanel = new JPanel(new GridLayout(1, 5, 8, 0));  // ← CHANGED: 5 columns now
+        JPanel statsPanel = new JPanel(new GridLayout(1, 5, 8, 0));
         statsPanel.setBackground(Color.WHITE);
         statsPanel.setBorder(new CompoundBorder(
             new LineBorder(new Color(200, 200, 200), 1),
@@ -120,7 +124,7 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
         
         scoreLabel = createStatLabel("SCORE", "0", SUCCESS);
         accuracyLabel = createStatLabel("ACCURACY", "0%", LIGHT_BLUE);
-        rankLabel = createStatLabel("RANK", "-", LIGHT_BLUE);  // ← CHANGED: Blue instead of warning yellow
+        rankLabel = createStatLabel("RANK", "-", LIGHT_BLUE);
         
         JButton leaderboardBtn = new JButton("LEADERBOARD");
         leaderboardBtn.setFont(new Font("Arial", Font.BOLD, 11));
@@ -131,7 +135,6 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
         leaderboardBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
         leaderboardBtn.addActionListener(e -> showLeaderboard());
         
-        // ← ADDED: Sound toggle button
         soundToggleBtn = new JButton(soundManager.isSoundEnabled() ? "♪ SOUND ON" : "X SOUND OFF");
         soundToggleBtn.setFont(new Font("Arial", Font.BOLD, 11));
         soundToggleBtn.setBackground(soundManager.isSoundEnabled() ? SUCCESS : new Color(127, 140, 141));
@@ -145,7 +148,7 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
         statsPanel.add(accuracyLabel);
         statsPanel.add(rankLabel);
         statsPanel.add(leaderboardBtn);
-        statsPanel.add(soundToggleBtn);  // ← ADDED: Add sound button to panel
+        statsPanel.add(soundToggleBtn);
         
         // Feedback (bottom)
         feedbackLabel = new JLabel("How many hearts do you see?", JLabel.CENTER);
@@ -197,25 +200,19 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
         buttonPanel.setPreferredSize(new Dimension(1080, 130));
         
         Color[] colors = {
-            new Color(231, 76, 60),
-            new Color(52, 152, 219),
-            new Color(46, 204, 113),
-            new Color(155, 89, 182),
-            new Color(243, 156, 18),
-            new Color(230, 126, 34),
-            new Color(26, 188, 156),
-            new Color(52, 73, 94),
-            new Color(149, 165, 166),
+            new Color(231, 76, 60), new Color(52, 152, 219), new Color(46, 204, 113),
+            new Color(155, 89, 182), new Color(243, 156, 18), new Color(230, 126, 34),
+            new Color(26, 188, 156), new Color(52, 73, 94), new Color(149, 165, 166),
             new Color(192, 57, 43)
         };
         
-        numberButtons = new JButton[10];  // Store button references
+        numberButtons = new JButton[10];
         
         for (int i = 0; i < 10; i++) {
             JButton btn = createNumberButton(String.valueOf(i), colors[i]);
             final int number = i;
             btn.addActionListener(e -> handleAnswer(number));
-            numberButtons[i] = btn;  // Save reference
+            numberButtons[i] = btn;
             buttonPanel.add(btn);
         }
         
@@ -251,10 +248,10 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
         return btn;
     }
     
-    private long lastTickSecond = -1;  // Track when we last played tick sound
+    private long lastTickSecond = -1;
     
     private void startCountdownTimer() {
-        lastTickSecond = -1;  // Reset tick tracker
+        lastTickSecond = -1;
         
         countdownTimer = new Timer(100, e -> {
             if (gameService.getSession() != null && gameService.getSession().isSessionActive()) {
@@ -262,7 +259,6 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
                 timerLabel.setText(String.valueOf(remaining));
                 timerProgress.setValue((int) remaining);
                 
-                // Play tick sound EVERY second (not just last 5)
                 if (remaining > 0 && remaining != lastTickSecond) {
                     soundManager.playTickSound();
                     lastTickSecond = remaining;
@@ -283,24 +279,19 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
                 if (remaining <= 0) {
                     System.out.println("⏰ Timer reached 0! Ending session...");
                     
-                    // Stop timer immediately
                     if (countdownTimer != null && countdownTimer.isRunning()) {
                         countdownTimer.stop();
                     }
                     
-                    // Disable all number buttons immediately
                     disableAllButtons();
                     
-                    // Cancel any pending answer delay timer
                     if (answerDelayTimer != null && answerDelayTimer.isRunning()) {
                         System.out.println("❌ Cancelling pending answer timer...");
                         answerDelayTimer.stop();
                     }
                     
-                    // Play sound
                     soundManager.playGameOverSound();
                     
-                    // End session on EDT thread with delay to ensure sound plays
                     Timer endSessionTimer = new Timer(500, evt -> {
                         System.out.println("🎮 Calling endSession now...");
                         if (gameService.getSession() != null) {
@@ -319,23 +310,19 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
     }
     
     private void handleAnswer(int answer) {
-        // Check if session is still active before processing
         if (gameService.getSession() == null || !gameService.getSession().isSessionActive()) {
             System.out.println("⚠️ Session inactive, ignoring button click");
-            return; // Don't process if game is over
+            return;
         }
         
         System.out.println("🎯 Button " + answer + " clicked");
         gameService.submitAnswer(answer);
         
-        // Cancel previous timer if exists
         if (answerDelayTimer != null && answerDelayTimer.isRunning()) {
             answerDelayTimer.stop();
         }
         
-        // Always load next game after a short delay (whether correct or wrong)
         answerDelayTimer = new Timer(800, e -> {
-            // Double-check session is still active before loading next game
             if (gameService.getSession() != null && gameService.getSession().isSessionActive()) {
                 System.out.println("⏭️ Loading next game...");
                 gameService.loadNextGame();
@@ -352,8 +339,6 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
         leaderboard.setVisible(true);
     }
     
-
-    // Disable all number buttons when game ends
     private void disableAllButtons() {
         if (numberButtons != null) {
             for (JButton btn : numberButtons) {
@@ -362,20 +347,17 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
         }
     }
     
-    // ← ADDED: Toggle sound method
     private void toggleSound() {
         soundManager.toggleSound();
         soundToggleBtn.setText(soundManager.isSoundEnabled() ? "♪ SOUND ON" : "X SOUND OFF");
         soundToggleBtn.setBackground(soundManager.isSoundEnabled() ? SUCCESS : new Color(127, 140, 141));
         
-        // Play a test beep when enabling
         if (soundManager.isSoundEnabled()) {
             soundManager.playCorrectSound();
         }
     }
     
     private void showGameOverDialog() {
-        // Extra safety check
         if (!isShowingGameOver) {
             System.out.println("⚠️ showGameOverDialog called but flag not set, aborting");
             return;
@@ -401,7 +383,6 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
             gameService.getSession().getSessionAttempts()
         );
         
-        // Check if player passed or failed (BASED ON SESSION ACCURACY ONLY!)
         boolean passed = sessionAccuracy >= 50.0;
         
         String title;
@@ -409,7 +390,6 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
         int messageType;
         
         if (passed) {
-            // PASSED - Session accuracy >= 50%
             soundManager.playAchievementSound();
             title = "🎉 CONGRATULATIONS!";
             messageType = JOptionPane.INFORMATION_MESSAGE;
@@ -432,7 +412,6 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
                 player.getTotalAttempts()
             );
         } else {
-            // FAILED - Session accuracy < 50%
             soundManager.playGameOverSound();
             title = "💀 GAME OVER!";
             messageType = JOptionPane.ERROR_MESSAGE;
@@ -465,17 +444,15 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
         );
         
         GameEventDispatcher.getInstance().removeListener(this);
-        isShowingGameOver = false;  // ← ADDED: Reset flag for next game
+        isShowingGameOver = false;
         
         if (choice == JOptionPane.YES_OPTION) {
             dispose();
-            // Load existing player data (don't create new one!)
             Player existingPlayer = PlayerDataService.getInstance().loadPlayer(username);
             if (existingPlayer != null) {
                 GameWindow newGame = new GameWindow(existingPlayer);
                 newGame.setVisible(true);
             } else {
-                // Fallback: if load fails, use current player
                 GameWindow newGame = new GameWindow(player);
                 newGame.setVisible(true);
             }
@@ -488,21 +465,36 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
     
     @Override
     public void onAnswerSubmitted(GameEvent.AnswerSubmitted event) {
+        System.out.println("📝 Answer submitted: " + event.answer + " - " + (event.correct ? "CORRECT" : "WRONG"));
+        
         SwingUtilities.invokeLater(() -> {
-            Player player = gameService.getSession().getPlayer();
+            GameSession session = gameService.getSession();
+            
+            if (session == null) {
+                System.out.println("⚠️ WARNING: Session is null!");
+                return;
+            }
+            
+            System.out.println("📊 Session stats - Score: " + session.getSessionScore() + 
+                             ", Accuracy: " + session.getSessionAccuracy() + 
+                             ", Attempts: " + session.getSessionAttempts());
             
             if (event.correct) {
                 feedbackLabel.setText("✓ CORRECT! Well done!");
                 feedbackLabel.setBackground(SUCCESS);
-                soundManager.playCorrectSound();  // ← ADDED: Correct answer sound
+                soundManager.playCorrectSound();
             } else {
                 feedbackLabel.setText("✗ WRONG! Try again!");
                 feedbackLabel.setBackground(DANGER);
-                soundManager.playWrongSound();  // ← ADDED: Wrong answer sound
+                soundManager.playWrongSound();
             }
             
-            scoreLabel.setText(createStatLabel("SCORE", String.valueOf(player.getScore()), SUCCESS).getText());
-            accuracyLabel.setText(createStatLabel("ACCURACY", String.format("%.1f%%", player.getAccuracy()), LIGHT_BLUE).getText());
+            scoreLabel.setText(createStatLabel("SCORE", 
+                String.valueOf(session.getSessionScore()), SUCCESS).getText());
+            accuracyLabel.setText(createStatLabel("ACCURACY", 
+                String.format("%.1f%%", session.getSessionAccuracy()), LIGHT_BLUE).getText());
+                
+            System.out.println("✅ Display updated");
         });
     }
     
@@ -516,7 +508,6 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
                 feedbackLabel.setText("How many hearts do you see?");
                 feedbackLabel.setBackground(DARK_GRAY);
             } else {
-                // Show error if game failed to load
                 imageLabel.setText("Failed to load game. Check internet connection.");
                 feedbackLabel.setText("Loading next game...");
             }
@@ -525,20 +516,23 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
     
     @Override
     public void onPlayerLoggedIn(GameEvent.PlayerLoggedIn event) {
-        // Reset display to 0 when new session starts
+        System.out.println("🎮 Player logged in event - Resetting display to 0");
         SwingUtilities.invokeLater(() -> {
             scoreLabel.setText(createStatLabel("SCORE", "0", SUCCESS).getText());
-            accuracyLabel.setText(createStatLabel("ACCURACY", "0%", LIGHT_BLUE).getText());
+            accuracyLabel.setText(createStatLabel("ACCURACY", "0.0%", LIGHT_BLUE).getText());
+            System.out.println("✅ Display reset complete");
         });
     }
     
     @Override
     public void onScoreUpdated(GameEvent.ScoreUpdated event) {
+        System.out.println("📊 Score updated event received");
         SwingUtilities.invokeLater(() -> {
             LeaderboardService lb = LeaderboardService.getInstance();
             int rank = lb.getPlayerRank(event.player.getUsername());
             int total = lb.getTotalPlayers();
-            rankLabel.setText(createStatLabel("RANK", rank + "/" + total, LIGHT_BLUE).getText());  // ← CHANGED: Blue color
+            rankLabel.setText(createStatLabel("RANK", rank + "/" + total, LIGHT_BLUE).getText());
+            System.out.println("✅ Rank updated: " + rank + "/" + total);
         });
     }
     
@@ -546,7 +540,6 @@ public class GameWindow extends JFrame implements GameEventDispatcher.GameEventL
     public void onSessionEnded(GameEvent.SessionEnded event) {
         System.out.println("📢 SessionEnded event received!");
         
-        // Prevent multiple dialogs
         if (isShowingGameOver) {
             System.out.println("⚠️ Game over dialog already showing, ignoring duplicate event");
             return;
